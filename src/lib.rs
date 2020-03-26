@@ -18,23 +18,25 @@ use core::{
     slice,
 };
 
-pub struct Stadium<T: Sized> {
+pub struct Stadium<'a, T: Sized> {
     buckets: Vec<Bucket<T>>,
     capacity: NonZeroUsize,
+    __lifetime: PhantomData<&'a ()>,
 }
 
-impl<T: Sized> Stadium<T> {
+impl<'a, T: Sized> Stadium<'a, T> {
     #[inline]
     pub fn with_capacity(capacity: NonZeroUsize) -> Self {
         Self {
             // Leave space for a single bucket
             buckets: Vec::with_capacity(1),
             capacity,
+            __lifetime: PhantomData,
         }
     }
 
     #[inline]
-    pub fn alloc<'a>(&'a mut self, item: T) -> Ticket<'a, T> {
+    pub fn alloc(&mut self, item: T) -> Ticket<'a, T> {
         if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
             return bucket.push(item);
         }
@@ -48,7 +50,7 @@ impl<T: Sized> Stadium<T> {
     }
 
     #[inline]
-    pub fn alloc_slice<'a>(&'a mut self, slice: &[T]) -> Ticket<'a, [T]> {
+    pub fn alloc_slice(&mut self, slice: &[T]) -> Ticket<'a, [T]> {
         if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
             return bucket.push_slice(slice);
         }
@@ -62,9 +64,9 @@ impl<T: Sized> Stadium<T> {
     }
 }
 
-impl Stadium<u8> {
+impl<'a> Stadium<'a, u8> {
     #[inline]
-    pub fn alloc_str<'a>(&'a mut self, string: &str) -> Ticket<'a, str> {
+    pub fn alloc_str(&mut self, string: &str) -> Ticket<'a, str> {
         if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
             return bucket.push_str(string);
         }
