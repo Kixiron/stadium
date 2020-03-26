@@ -1,5 +1,7 @@
 #![no_std]
 
+//! A small `no_std` arena allocator
+
 extern crate alloc;
 
 use alloc::{
@@ -130,7 +132,7 @@ impl<T: Sized> Bucket<T> {
 
         unsafe {
             let ptr = self.items.as_ptr().add(self.index);
-            *ptr = item;
+            ptr.write(item);
 
             self.index += 1;
 
@@ -144,6 +146,7 @@ impl<T: Sized> Bucket<T> {
     #[inline]
     pub fn push_slice<'a>(&mut self, slice: &[T]) -> Ticket<'a, [T]> {
         debug_assert!(!self.is_full());
+        assert!(slice.len() < self.capacity.get() - self.index);
 
         unsafe {
             let ptr = self.items.as_ptr().add(self.index);
@@ -165,9 +168,10 @@ impl Bucket<u8> {
     pub fn push_str<'a>(&mut self, string: &str) -> Ticket<'a, str> {
         debug_assert!(!self.is_full());
 
-        unsafe {
-            let bytes = string.as_bytes();
+        let bytes = string.as_bytes();
+        assert!(bytes.len() < self.capacity.get() - self.index);
 
+        unsafe {
             let ptr = self.items.as_ptr().add(self.index);
             ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
 
