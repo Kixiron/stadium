@@ -221,6 +221,12 @@ impl<T: PartialEq> PartialEq for Ticket<'_, T> {
 
 impl<T: Eq> Eq for Ticket<'_, T> {}
 
+impl<T: PartialEq> PartialEq<T> for Ticket<'_, T> {
+    fn eq(&self, other: &T) -> bool {
+        &*self == other
+    }
+}
+
 impl<'a, T> Deref for Ticket<'a, T> {
     type Target = T;
 
