@@ -85,12 +85,12 @@ impl<T: Sized> Drop for Bucket<T> {
     fn drop(&mut self) {
         unsafe {
             let items = self.items.as_ptr();
-            for i in 0..self.capacity.get() {
+            for i in 0..self.index {
                 ptr::drop_in_place(items.add(i));
             }
 
             dealloc(
-                items as *mut _,
+                items as *mut u8,
                 Layout::from_size_align_unchecked(
                     mem::size_of::<T>() * self.capacity.get(),
                     mem::align_of::<T>(),
