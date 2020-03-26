@@ -2,227 +2,267 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, vec, vec::Vec};
-use core::{cell::RefCell, marker::PhantomData, mem::MaybeUninit, ops, ptr::NonNull};
+use alloc::{
+    alloc::{alloc, dealloc, Layout},
+    vec::Vec,
+};
+use core::{
+    marker::PhantomData,
+    mem,
+    num::NonZeroUsize,
+    ops::{Deref, DerefMut},
+    ptr::{self, NonNull},
+    slice,
+};
 
-pub struct Stadium<'a, T> {
-    buckets: RefCell<Vec<Bucket<T>>>,
-    default_capacity: usize,
-    __lifetime: PhantomData<&'a ()>,
+pub struct Stadium<T: Sized> {
+    buckets: Vec<Bucket<T>>,
+    capacity: NonZeroUsize,
 }
 
-impl<'a, T: Sized> Stadium<'a, T> {
+impl<T: Sized> Stadium<T> {
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        assert!(capacity > 0);
-
+    pub fn with_capacity(capacity: NonZeroUsize) -> Self {
         Self {
-            buckets: RefCell::new(vec![Bucket::with_capacity(capacity)]),
-            default_capacity: capacity,
-            __lifetime: PhantomData,
+            // Leave space for a single bucket
+            buckets: Vec::with_capacity(1),
+            capacity,
         }
     }
 
     #[inline]
-    pub fn alloc(&mut self, item: T) -> Ticket<'a, T> {
-        let mut buckets = self.buckets.borrow_mut();
-
-        // TODO: Maybe use a try_borrow just in case?
-        let needs_alloc = if let Some(latest) = buckets.last() {
-            latest.is_full()
-        } else {
-            true
-        };
-
-        if needs_alloc {
-            buckets.push(Bucket::with_capacity(self.default_capacity));
+    pub fn alloc<'a>(&'a mut self, item: T) -> Ticket<'a, T> {
+        if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
+            return bucket.push(item);
         }
 
-        let ptr = buckets
-            .last_mut()
-            .unwrap_or_else(|| unreachable!())
-            .push(item)
-            .unwrap_or_else(|| unreachable!());
+        let mut bucket = Bucket::with_capacity(self.capacity);
 
-        Ticket::new(ptr)
+        let ticket = bucket.push(item);
+        self.buckets.push(bucket);
+
+        ticket
+    }
+
+    #[inline]
+    pub fn alloc_slice<'a>(&'a mut self, slice: &[T]) -> Ticket<'a, [T]> {
+        if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
+            return bucket.push_slice(slice);
+        }
+
+        let mut bucket = Bucket::with_capacity(self.capacity);
+
+        let ticket = bucket.push_slice(slice);
+        self.buckets.push(bucket);
+
+        ticket
     }
 }
 
-impl<'a, T: Clone> Stadium<'a, T> {
-    pub fn alloc_slice(&mut self, slice: &[T]) -> Ticket<'a, [T]> {
-        let mut buckets = self.buckets.borrow_mut();
-
-        // TODO: Maybe use a try_borrow just in case?
-        let needs_alloc = if let Some(latest) = buckets.last() {
-            latest.is_full()
-        } else {
-            true
-        };
-
-        if needs_alloc {
-            buckets.push(Bucket::with_capacity(self.default_capacity));
+impl Stadium<u8> {
+    #[inline]
+    pub fn alloc_str<'a>(&'a mut self, string: &str) -> Ticket<'a, str> {
+        if let Some(bucket) = self.buckets.last_mut().filter(|bucket| !bucket.is_full()) {
+            return bucket.push_str(string);
         }
 
-        let ptr = buckets
-            .last_mut()
-            .unwrap_or_else(|| unreachable!())
-            .push_slice(slice)
-            .unwrap_or_else(|| unreachable!());
+        let mut bucket = Bucket::with_capacity(self.capacity);
 
-        Ticket::new(ptr)
+        let ticket = bucket.push_str(string);
+        self.buckets.push(bucket);
+
+        ticket
     }
 }
 
-impl<'a> Stadium<'a, u8> {
-    pub fn alloc_str(&mut self, string: &str) -> Ticket<'a, str> {
-        let mut buckets = self.buckets.borrow_mut();
-
-        // TODO: Maybe use a try_borrow just in case?
-        let needs_alloc = if let Some(latest) = buckets.last() {
-            latest.is_full()
-        } else {
-            true
-        };
-
-        if needs_alloc {
-            buckets.push(Bucket::with_capacity(self.default_capacity));
-        }
-
-        let ptr = buckets
-            .last_mut()
-            .unwrap_or_else(|| unreachable!())
-            .push_str(string)
-            .unwrap_or_else(|| unreachable!());
-
-        Ticket::new(ptr)
-    }
-}
-
-struct Bucket<T> {
+struct Bucket<T: Sized> {
     index: usize,
-    data: Box<[MaybeUninit<T>]>,
+    items: NonNull<T>,
+    capacity: NonZeroUsize,
 }
 
-impl<T> Bucket<T> {
-    #[inline]
-    pub const fn is_full(&self) -> bool {
-        self.index + 1 == self.data.len()
+impl<T: Sized> Drop for Bucket<T> {
+    fn drop(&mut self) {
+        unsafe {
+            let items = self.items.as_ptr();
+            for i in 0..self.capacity.get() {
+                ptr::drop_in_place(items.add(i));
+            }
+
+            dealloc(
+                items as *mut _,
+                Layout::from_size_align_unchecked(
+                    mem::size_of::<T>() * self.capacity.get(),
+                    mem::align_of::<T>(),
+                ),
+            );
+        }
     }
 }
 
 impl<T: Sized> Bucket<T> {
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            index: 0,
-            data: core::iter::repeat_with(|| MaybeUninit::zeroed())
-                .take(capacity)
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+    pub fn with_capacity(capacity: NonZeroUsize) -> Self {
+        unsafe {
+            let layout = Layout::from_size_align_unchecked(
+                mem::size_of::<T>() * capacity.get(),
+                mem::align_of::<T>(),
+            );
+
+            Self {
+                index: 0,
+                capacity: capacity.clone(),
+                items: NonNull::new(alloc(layout))
+                    .expect("Bucket alloc out of memory")
+                    .cast(),
+            }
         }
     }
 
     #[inline]
-    pub fn push(&mut self, item: T) -> Option<NonNull<T>> {
-        if self.is_full() {
-            None
-        } else {
-            self.index += 1;
-            self.data[self.index] = MaybeUninit::new(item);
+    pub const fn is_full(&self) -> bool {
+        self.index == self.capacity.get()
+    }
 
-            NonNull::new(self.data[self.index].as_mut_ptr())
+    #[inline]
+    pub fn push<'a>(&mut self, item: T) -> Ticket<'a, T> {
+        debug_assert!(!self.is_full());
+
+        unsafe {
+            let ptr = self.items.as_ptr().add(self.index);
+            *ptr = item;
+
+            self.index += 1;
+
+            Ticket {
+                ptr: NonNull::new_unchecked(ptr),
+                _lifetime: PhantomData,
+            }
         }
     }
-}
 
-impl<T: Clone> Bucket<T> {
     #[inline]
-    pub fn push_slice(&mut self, slice: &[T]) -> Option<NonNull<[T]>> {
-        if self.is_full() {
-            None
-        } else {
-            self.index += 1;
+    pub fn push_slice<'a>(&mut self, slice: &[T]) -> Ticket<'a, [T]> {
+        debug_assert!(!self.is_full());
 
-            let raw_slice = &self.data[self.index..self.index + slice.len()]
-                as *const [MaybeUninit<T>] as *mut [T];
+        unsafe {
+            let ptr = self.items.as_ptr().add(self.index);
+            ptr::copy_nonoverlapping(slice.as_ptr(), ptr, slice.len());
+
             self.index += slice.len();
 
-            unsafe {
-                (&mut *raw_slice).clone_from_slice(slice);
+            let slice_ptr = slice::from_raw_parts_mut(ptr, slice.len()) as *mut [T];
+            Ticket {
+                ptr: NonNull::new_unchecked(slice_ptr),
+                _lifetime: PhantomData,
             }
-
-            NonNull::new(raw_slice)
         }
     }
 }
 
 impl Bucket<u8> {
     #[inline]
-    pub fn push_str(&mut self, string: &str) -> Option<NonNull<str>> {
-        if self.is_full() {
-            None
-        } else {
-            self.index += 1;
+    pub fn push_str<'a>(&mut self, string: &str) -> Ticket<'a, str> {
+        debug_assert!(!self.is_full());
 
-            let slice = &self.data[self.index..self.index + string.len()]
-                as *const [MaybeUninit<u8>] as *mut [u8];
-            self.index += string.len();
+        unsafe {
+            let bytes = string.as_bytes();
 
-            unsafe {
-                (&mut *slice).copy_from_slice(string.as_bytes());
+            let ptr = self.items.as_ptr().add(self.index);
+            ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+
+            self.index += bytes.len();
+
+            let slice_ptr = slice::from_raw_parts_mut(ptr, bytes.len()) as *mut [u8] as *mut str;
+            Ticket {
+                ptr: NonNull::new_unchecked(slice_ptr),
+                _lifetime: PhantomData,
             }
-
-            NonNull::new(slice as *mut str)
         }
     }
 }
 
-#[derive(Debug, Copy, Clone)]
 pub struct Ticket<'a, T: ?Sized> {
     ptr: NonNull<T>,
-    __lifetime: PhantomData<&'a ()>,
+    _lifetime: PhantomData<&'a T>,
 }
 
-impl<'a, T: ?Sized> Ticket<'a, T> {
-    pub(crate) fn new(ptr: NonNull<T>) -> Self {
-        Self {
-            ptr,
-            __lifetime: PhantomData,
-        }
-    }
-}
-
-impl<'a, T: ?Sized> ops::Deref for Ticket<'a, T> {
+impl<'a, T> Deref for Ticket<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // Safety: The only pointers that should be in a Ticket are pointers into a
-        // live stadium.
         unsafe { self.ptr.as_ref() }
     }
 }
 
-impl<'a, T: ?Sized> ops::DerefMut for Ticket<'a, T> {
+impl<'a, T> DerefMut for Ticket<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // Safety: The only pointers that should be in a Ticket are pointers into a
-        // live stadium.
         unsafe { self.ptr.as_mut() }
     }
 }
 
-#[test]
-fn test() {
-    let mut stadium = Stadium::with_capacity(100);
+impl<'a, T> Deref for Ticket<'a, [T]> {
+    type Target = [T];
 
-    for _ in 0..200 {
-        let one = stadium.alloc(10_000usize);
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
 
-        assert_eq!(&*one, &10_000usize);
+impl<'a, T> DerefMut for Ticket<'a, [T]> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.ptr.as_mut() }
+    }
+}
 
-        assert_eq!(&*stadium.alloc(10_000usize), &10_000usize);
+impl<'a> Deref for Ticket<'a, str> {
+    type Target = str;
 
-        let two = stadium.alloc(10_000usize);
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
 
-        assert_eq!(&*two, &10_000usize);
+impl<'a> DerefMut for Ticket<'a, str> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn works() {
+        let mut stadium = Stadium::with_capacity(NonZeroUsize::new(100).unwrap());
+
+        for _ in 0..200 {
+            let one = stadium.alloc(10_000usize);
+            assert_eq!(&*one, &10_000usize);
+
+            assert_eq!(&*stadium.alloc(10_000usize), &10_000usize);
+
+            let two = stadium.alloc(10_000usize);
+            assert_eq!(&*two, &10_000usize);
+        }
+    }
+
+    #[test]
+    fn slice() {
+        let mut stadium: Stadium<i32> = Stadium::with_capacity(NonZeroUsize::new(10).unwrap());
+
+        let slice = stadium.alloc_slice(&[100, 200, 300, 400]);
+
+        assert_eq!(&*slice, &[100, 200, 300, 400]);
+    }
+
+    #[test]
+    fn string() {
+        let mut stadium = Stadium::with_capacity(NonZeroUsize::new(10).unwrap());
+
+        let slice = stadium.alloc_str("test");
+
+        assert_eq!(&*slice, "test");
     }
 }
