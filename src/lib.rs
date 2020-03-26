@@ -9,10 +9,11 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    fmt,
     marker::PhantomData,
     mem,
     num::NonZeroUsize,
-    ops::{Deref, DerefMut},
+    ops::Deref,
     ptr::{self, NonNull},
     slice,
 };
@@ -186,22 +187,43 @@ impl Bucket<u8> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Ticket<'a, T: ?Sized> {
     ptr: NonNull<T>,
     _lifetime: PhantomData<&'a T>,
 }
+
+impl<T> fmt::Pointer for Ticket<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:p}", self.ptr)
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Ticket<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", &*self)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Ticket<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &*self)
+    }
+}
+
+impl<T: PartialEq> PartialEq for Ticket<'_, T> {
+    fn eq(&self, other: &Ticket<'_, T>) -> bool {
+        &*self == &*other
+    }
+}
+
+impl<T: Eq> Eq for Ticket<'_, T> {}
 
 impl<'a, T> Deref for Ticket<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl<'a, T> DerefMut for Ticket<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
     }
 }
 
@@ -213,23 +235,11 @@ impl<'a, T> Deref for Ticket<'a, [T]> {
     }
 }
 
-impl<'a, T> DerefMut for Ticket<'a, [T]> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
 impl<'a> Deref for Ticket<'a, str> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl<'a> DerefMut for Ticket<'a, str> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
     }
 }
 
