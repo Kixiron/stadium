@@ -4,3 +4,4 @@ description = "A small no_std arena allocator"
 version = "0.1.0"
 authors = ["Chase Wilson <contact@chasewilson.dev>"]
 edition = "2018"
+license = "Zlib"

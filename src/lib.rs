@@ -203,13 +203,13 @@ impl<T> fmt::Pointer for Ticket<'_, T> {
 
 impl<T: fmt::Debug> fmt::Debug for Ticket<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &*self)
+        write!(f, "{:?}", self.deref())
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Ticket<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &*self)
+        write!(f, "{}", self.deref())
     }
 }
 
