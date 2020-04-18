@@ -1,5 +1,5 @@
 //! A small `no_std` arena allocator
-//#![no_std]
+#![no_std]
 
 extern crate alloc;
 
@@ -112,9 +112,9 @@ impl<T: Sized> Stadium<T> {
         }
 
         // Safety: Slices of length 0 have already been handled
-        let mut bucket = Bucket::with_capacity(dbg!(cmp::max(self.capacity, unsafe {
+        let mut bucket = Bucket::with_capacity(cmp::max(self.capacity, unsafe {
             NonZeroUsize::new_unchecked(slice.len())
-        })));
+        }));
 
         // Safety: The new bucket will have enough room for the slice
         let ticket = unsafe { bucket.push_slice(slice) };
