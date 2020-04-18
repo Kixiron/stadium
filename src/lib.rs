@@ -203,19 +203,19 @@ impl<T> fmt::Pointer for Ticket<'_, T> {
 
 impl<T: fmt::Debug> fmt::Debug for Ticket<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.deref())
+        fmt::Debug::fmt(self.deref(), f)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Ticket<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.deref())
+        fmt::Display::fmt(self.deref(), f)
     }
 }
 
 impl<T: PartialEq> PartialEq for Ticket<'_, T> {
     fn eq(&self, other: &Ticket<'_, T>) -> bool {
-        &*self == &*other
+        self.deref() == other.deref()
     }
 }
 
@@ -223,7 +223,7 @@ impl<T: Eq> Eq for Ticket<'_, T> {}
 
 impl<T: PartialEq> PartialEq<T> for Ticket<'_, T> {
     fn eq(&self, other: &T) -> bool {
-        &*self == other
+        self.deref() == other
     }
 }
 
