@@ -72,7 +72,7 @@ impl<'a, T: Sized> Stadium<'a, T> {
 
     /// Store an item in the stadium
     #[inline]
-    pub fn store(&'a self, item: T) -> Ticket<'a, T> {
+    pub fn store(&self, item: T) -> Ticket<'a, T> {
         // Return aligned but dangling tickets for zsts
         if mem::size_of::<T>() == 0 {
             return Ticket::dangling();
@@ -98,7 +98,7 @@ impl<'a, T: Sized> Stadium<'a, T> {
 
     /// Store a slice in the stadium
     #[inline]
-    pub fn store_slice(&'a self, slice: &[T]) -> Ticket<'a, [T]> {
+    pub fn store_slice(&self, slice: &[T]) -> Ticket<'a, [T]> {
         // Return aligned but dangling tickets for empty slices
         if slice.is_empty() {
             return Ticket::dangling_slice();
@@ -130,7 +130,7 @@ impl<'a, T: Sized> Stadium<'a, T> {
 impl<'a> Stadium<'a, u8> {
     /// Store a string in the stadium
     #[inline]
-    pub fn store_str(&'a self, string: &str) -> Ticket<'a, str> {
+    pub fn store_str(&self, string: &str) -> Ticket<'a, str> {
         let len = if string.is_empty() {
             // Return aligned but dangling tickets for empty strings
             return Ticket::dangling_str();
