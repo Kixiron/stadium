@@ -19,14 +19,15 @@ use core::{
 };
 
 /// An arena allocator that dynamically grows in size when needed, allocating memory in large chunks
-pub struct Stadium<T: Sized> {
+pub struct Stadium<'a, T: Sized> {
     /// All the internal buckets, storing all allocated and unallocated items
     buckets: RefCell<Vec<Bucket<T>>>,
     /// The default capacity of each bucket
     capacity: NonZeroUsize,
+    __lifetime: PhantomData<&'a T>,
 }
 
-impl<T: Sized> Stadium<T> {
+impl<'a, T: Sized> Stadium<'a, T> {
     /// Create a new stadium with the default bucket size of 1024 items
     ///
     /// Note: When used with ZSTs, the bucket size will always be 1
@@ -44,6 +45,7 @@ impl<T: Sized> Stadium<T> {
             // Leave space for a single bucket
             buckets: RefCell::new(Vec::with_capacity(1)),
             capacity,
+            __lifetime: PhantomData,
         }
     }
 
@@ -64,12 +66,13 @@ impl<T: Sized> Stadium<T> {
             // Leave space for a single bucket
             buckets: RefCell::new(Vec::with_capacity(1)),
             capacity,
+            __lifetime: PhantomData,
         }
     }
 
     /// Store an item in the stadium
     #[inline]
-    pub fn store<'a>(&'a self, item: T) -> Ticket<'a, T> {
+    pub fn store(&'a self, item: T) -> Ticket<'a, T> {
         // Return aligned but dangling tickets for zsts
         if mem::size_of::<T>() == 0 {
             return Ticket::dangling();
@@ -95,7 +98,7 @@ impl<T: Sized> Stadium<T> {
 
     /// Store a slice in the stadium
     #[inline]
-    pub fn store_slice<'a>(&'a self, slice: &[T]) -> Ticket<'a, [T]> {
+    pub fn store_slice(&'a self, slice: &[T]) -> Ticket<'a, [T]> {
         // Return aligned but dangling tickets for empty slices
         if slice.is_empty() {
             return Ticket::dangling_slice();
@@ -124,10 +127,10 @@ impl<T: Sized> Stadium<T> {
     }
 }
 
-impl Stadium<u8> {
+impl<'a> Stadium<'a, u8> {
     /// Store a string in the stadium
     #[inline]
-    pub fn store_str<'a>(&'a self, string: &str) -> Ticket<'a, str> {
+    pub fn store_str(&'a self, string: &str) -> Ticket<'a, str> {
         let len = if string.is_empty() {
             // Return aligned but dangling tickets for empty strings
             return Ticket::dangling_str();
@@ -158,7 +161,7 @@ impl Stadium<u8> {
     }
 }
 
-impl<T> Default for Stadium<T> {
+impl<'a, T> Default for Stadium<'a, T> {
     fn default() -> Self {
         Self::new()
     }
