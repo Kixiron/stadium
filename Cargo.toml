@@ -5,3 +5,11 @@ version = "0.1.0"
 authors = ["Chase Wilson <contact@chasewilson.dev>"]
 edition = "2018"
 license = "Zlib"
+
+[features]
+default = []
+serialize = ["serde"]
+
+[dependencies.serde]
+version = "1.0.110"
+optional = true

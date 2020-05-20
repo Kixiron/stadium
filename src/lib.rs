@@ -490,6 +490,19 @@ impl<T: hash::Hash> hash::Hash for Ticket<'_, T> {
 unsafe impl<T: Send> Send for Ticket<'_, T> {}
 unsafe impl<T: Sync> Sync for Ticket<'_, T> {}
 
+#[cfg(features = "serialize")]
+impl<T> serde::Serialize for Ticket<'_, T>
+where
+    T: serde::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.as_ref().serialize(serializer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
