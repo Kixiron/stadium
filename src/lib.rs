@@ -490,7 +490,7 @@ impl<T: hash::Hash> hash::Hash for Ticket<'_, T> {
 unsafe impl<T: Send> Send for Ticket<'_, T> {}
 unsafe impl<T: Sync> Sync for Ticket<'_, T> {}
 
-#[cfg(features = "serialize")]
+#[cfg(feature = "serialize")]
 impl<T> serde::Serialize for Ticket<'_, T>
 where
     T: serde::Serialize,
@@ -499,7 +499,7 @@ where
     where
         S: serde::Serializer,
     {
-        self.as_ref().serialize(serializer)
+        self.deref().serialize(serializer)
     }
 }
 
