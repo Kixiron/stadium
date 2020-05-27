@@ -304,7 +304,6 @@ impl Bucket<u8> {
 /// A reference to an item stored in a [`Stadium`]
 ///
 /// [`Stadium`]: crate::Stadium
-#[derive(Copy, Clone)]
 pub struct Ticket<'a, T: ?Sized> {
     ptr: NonNull<T>,
     __lifetime: PhantomData<&'a T>,
@@ -362,6 +361,14 @@ impl<'a> Ticket<'a, str> {
         }
     }
 }
+
+impl<'a, T> Clone for Ticket<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, T> Copy for Ticket<'a, T> {}
 
 impl<T: fmt::Debug> fmt::Debug for Ticket<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
